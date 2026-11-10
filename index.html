@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>مدرّب التقليد</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1f6f5c">
+<link rel="icon" href="icon.svg">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#eef2f1;--card:#fff;--ink:#17302b;--mut:#5b706b;--line:#d3ddda;--ac:#1f6f5c;--acs:#dcebe6}
+@media(prefers-color-scheme:dark){:root{--bg:#10201d;--card:#172a26;--ink:#e8f0ed;--mut:#9bb3ac;--line:#2a423c;--ac:#5cc2a6;--acs:#1d3a33}}
+body.adhan{--ac:#8a5a2b;--acs:#f1e6d6}
+@media(prefers-color-scheme:dark){body.adhan{--ac:#e0a869;--acs:#3a2d1d}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.8 'Noto Naskh Arabic',serif;padding:0 14px 60px;max-width:720px;margin-inline:auto}
+header{display:flex;align-items:center;justify-content:space-between;padding:16px 0 8px}
+h1{font-size:22px;margin:0}
+h2{font-size:19px;margin:0 0 8px}
+.tabs{display:flex;gap:8px;margin:8px 0 14px}
+.tabs button{flex:1;padding:12px;font:inherit;font-weight:700;border:2px solid var(--line);background:var(--card);color:var(--ink);border-radius:12px}
+.tabs button.on{background:var(--ac);border-color:var(--ac);color:#fff}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}
+button,select,input{font:inherit;color:var(--ink)}
+.b{background:var(--ac);color:#fff;border:0;border-radius:10px;padding:9px 16px;font-weight:700}
+.b.o{background:none;color:var(--ac);border:2px solid var(--ac)}
+.b[disabled]{opacity:.5}
+input[type=text],input[type=password],select{width:100%;padding:9px;border:1px solid var(--line);border-radius:10px;background:var(--bg);margin:4px 0 8px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.mut{color:var(--mut);font-size:15px}
+.item{border-top:1px solid var(--line);padding:10px 0}
+.res{white-space:pre-wrap;background:var(--acs);border-radius:10px;padding:12px;margin-top:8px}
+.score{font-size:38px;font-weight:700;color:var(--ac);line-height:1.2}
+audio{width:100%;margin:6px 0}
+.hide{display:none}
+#msg{position:fixed;bottom:14px;inset-inline:14px;max-width:690px;margin:auto;background:var(--ink);color:var(--bg);padding:12px;border-radius:12px;display:none}
+</style>
+</head>
+<body>
+<header><h1>مدرّب التقليد</h1><button class="b o" id="gear">الإعدادات</button></header>
+
+<div id="set" class="card hide">
+<h2>الإعدادات</h2>
+<label>مفتاح Gemini (من aistudio.google.com)</label>
+<input type="password" id="key" placeholder="الصق المفتاح هنا">
+<label>اسم النموذج</label>
+<input type="text" id="model" dir="ltr">
+<p class="mut">المفتاح يُحفظ على جوالك فقط.</p>
+<button class="b" id="saveset">حفظ</button>
+</div>
+
+<div class="tabs"><button id="t-quran" class="on">القرآن الكريم</button><button id="t-adhan">الأذان</button></div>
+
+<div class="card">
+<h2>1. القارئ المرجعي</h2>
+<input type="text" id="reader" placeholder="اسم القارئ">
+<div class="mut" id="daily"></div>
+<p class="mut">ارفع حتى 3 تلاوات جديدة كل يوم، كل واحدة أقل من دقيقة (صوت أو فيديو).</p>
+<input type="file" id="reffile" accept="audio/*,video/*" multiple class="hide">
+<button class="b" id="refbtn">رفع تلاوات القارئ</button>
+<div id="reflist"></div>
+</div>
+
+<div class="card">
+<h2>2. تدريبي اليومي</h2>
+<label class="mut">قارِن مع التلاوة:</label>
+<select id="refsel"></select>
+<div class="row">
+<button class="b" id="rec">ابدأ التسجيل</button>
+<button class="b o" id="upmine">أو ارفع تسجيلاً</button>
+</div>
+<input type="file" id="minefile" accept="audio/*,video/*" class="hide">
+<audio id="preview" controls class="hide"></audio>
+<button class="b hide" id="evalbtn">قيّم تقليدي</button>
+<div id="evalout"></div>
+<div id="hist"></div>
+</div>
+
+<div class="card">
+<h2>3. تحليل تلاوتي أنا</h2>
+<p class="mut">ارفع تلاوتك، وسيقسمها الذكاء الاصطناعي ويقول لك أين ترفع صوتك وأي مقام تقرأ.</p>
+<input type="file" id="ownfile" accept="audio/*,video/*" class="hide">
+<button class="b" id="ownbtn">رفع تلاوتي</button>
+<div id="ownout"></div>
+</div>
+<div id="msg"></div>
+
+<script>
+const $=id=>document.getElementById(id);
+let sec=localStorage.sec||'quran',pendingMine=null;
+const SN={quran:'القرآن',adhan:'الأذان'};
+const today=()=>new Date().toISOString().slice(0,10);
+function toast(t,ms=4000){const m=$('msg');m.textContent=t;m.style.display='block';clearTimeout(toast.t);if(ms)toast.t=setTimeout(()=>m.style.display='none',ms)}
+if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+
+/* ---------- storage ---------- */
+const dbp=new Promise((ok,no)=>{const r=indexedDB.open('trainer',1);r.onupgradeneeded=()=>r.result.createObjectStore('i',{keyPath:'id'});r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)});
+const tx=async(m,f)=>{const d=await dbp;return new Promise((ok,no)=>{const t=d.transaction('i',m),s=t.objectStore('i'),q=f(s);t.oncomplete=()=>ok(q&&q.result);t.onerror=()=>no(t.error)})};
+const put=o=>tx('readwrite',s=>s.put(o));
+const del=id=>tx('readwrite',s=>s.delete(id));
+const all=()=>tx('readonly',s=>s.getAll());
+const items=async(kind)=>(await all()).filter(x=>x.sec===sec&&x.kind===kind).sort((a,b)=>b.ts-a.ts);
+
+/* ---------- audio ---------- */
+async function hashOf(buf){const h=await crypto.subtle.digest('SHA-256',buf);return [...new Uint8Array(h)].map(b=>b.toString(16).padStart(2,'0')).join('')}
+async function decode(buf){const c=new (window.AudioContext||window.webkitAudioContext)();try{return await c.decodeAudioData(buf.slice(0))}finally{c.close()}}
+function toWav(ab){const sr=16000,d=ab.getChannelData(0),r=ab.sampleRate/sr,n=Math.floor(d.length/r),o=new DataView(new ArrayBuffer(44+n*2));
+const w=(p,s)=>[...s].forEach((c,i)=>o.setUint8(p+i,c.charCodeAt(0)));
+w(0,'RIFF');o.setUint32(4,36+n*2,true);w(8,'WAVEfmt ');o.setUint32(16,16,true);o.setUint16(20,1,true);o.setUint16(22,1,true);o.setUint32(24,sr,true);o.setUint32(28,sr*2,true);o.setUint16(32,2,true);o.setUint16(34,16,true);w(36,'data');o.setUint32(40,n*2,true);
+for(let i=0;i<n;i++){let a=0,k=Math.floor(i*r),e=Math.max(k+1,Math.floor((i+1)*r));for(let j=k;j<e&&j<d.length;j++)a+=d[j];a/=(e-k);o.setInt16(44+i*2,Math.max(-1,Math.min(1,a))*32767,true)}
+return new Blob([o],{type:'audio/wav'})}
+const NN=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+function noteName(m){const r=Math.round(m),c=Math.round((m-r)*100);return NN[((r%12)+12)%12]+(Math.floor(r/12)-1)+(c?(c>0?' +':' ')+c+'c':'')}
+const med=a=>{if(!a.length)return 0;const s=[...a].sort((x,y)=>x-y);return s[s.length>>1]};
+function analyze(ab){
+const sr=ab.sampleRate,d=ab.getChannelData(0),f=Math.max(1,Math.round(sr/11025)),n=Math.floor(d.length/f),x=new Float32Array(n);
+for(let i=0;i<n;i++){let a=0;for(let j=0;j<f;j++)a+=d[i*f+j];x[i]=a/f}
+const rate=sr/f,W=1024,H=Math.round(rate*0.05),minL=Math.floor(rate/500),maxL=Math.floor(rate/70),fr=[];
+for(let s=0;s+W+maxL<n;s+=H){let r0=0;for(let i=0;i<W;i+=2)r0+=x[s+i]*x[s+i];const rms=Math.sqrt(r0/(W/2));
+let best=0,bl=0,cs=[];
+if(rms>0.008){for(let l=minL;l<=maxL;l++){let c=0;for(let i=0;i<W;i+=2)c+=x[s+i]*x[s+i+l];cs[l]=c/r0;if(cs[l]>best){best=cs[l];bl=l}}
+if(bl>=2*minL&&cs[bl>>1]>0.9*best)bl=bl>>1}
+fr.push({t:s/rate,e:rms,m:(best>0.5&&bl)?12*Math.log2(rate/bl/440)+69:0})}
+const dur=ab.duration,v=fr.filter(q=>q.m>0),base=med(v.map(q=>q.m));
+const emax=Math.max(...fr.map(q=>q.e),1e-6);
+const seg=[];for(let t=0;t<dur;t+=5){const g=fr.filter(q=>q.t>=t&&q.t<t+5),gv=g.filter(q=>q.m>0);
+let on=0;for(let i=2;i<g.length;i++)if(g[i-1].e>g[i-2].e*1.0&&g[i-1].e>g[i].e&&g[i-1].e>emax*0.1)on++;
+seg.push({from:+t.toFixed(0),to:+Math.min(dur,t+5).toFixed(0),note:gv.length?noteName(med(gv.map(q=>q.m))):'صمت',lo:gv.length?noteName(Math.min(...gv.map(q=>q.m))):'-',hi:gv.length?noteName(Math.max(...gv.map(q=>q.m))):'-',loud:Math.round(20*Math.log10(Math.max(1e-4,g.reduce((a,q)=>a+q.e,0)/Math.max(1,g.length))/emax)),pace:+(on/Math.max(1,Math.min(5,dur-t))).toFixed(1)})}
+const pauses=[];let st=null;for(const q of fr){if(q.e<emax*0.04){if(st===null)st=q.t}else{if(st!==null&&q.t-st>0.4)pauses.push([+st.toFixed(1),+(q.t-st).toFixed(1)]);st=null}}
+// contour for comparison
+let last=0;const ct=fr.map(q=>{if(q.m>0)last=q.m-base;return last});
+return{dur,base:noteName(base),seg,pauses,ct,summary:`المدة ${dur.toFixed(1)} ث. النغمة المركزية ${noteName(base)}. المقاطع كل 5 ثوان (النغمة الوسطى، الأدنى، الأعلى، قوة الصوت dB نسبية، السرعة مقطع/ث): `+seg.map(s=>`[${s.from}-${s.to}ث ${s.note} ${s.lo}..${s.hi} ${s.loud}dB ${s.pace}]`).join(' ')+`. وقفات (بداية،مدة): ${pauses.map(p=>p.join('/')).join(' ')||'لا يوجد'}`}}
+function rs(a,n=100){const o=[];for(let i=0;i<n;i++)o.push(a[Math.min(a.length-1,Math.floor(i*a.length/n))]||0);return o}
+function corr(a,b){const n=a.length,ma=a.reduce((x,y)=>x+y)/n,mb=b.reduce((x,y)=>x+y)/n;let s=0,x=0,y=0;for(let i=0;i<n;i++){s+=(a[i]-ma)*(b[i]-mb);x+=(a[i]-ma)**2;y+=(b[i]-mb)**2}return x&&y?s/Math.sqrt(x*y):0}
+function score(a,b){const c=corr(rs(a.ct),rs(b.ct)),p=Math.round((c+1)/2*100),t=Math.round(100*Math.min(a.dur,b.dur)/Math.max(a.dur,b.dur));return{p,t,all:Math.round(p*0.7+t*0.3)}}
+async function prep(file){
+if(file.size>60e6)throw new Error('الملف كبير جداً');
+const buf=await file.arrayBuffer();let ab;
+try{ab=await decode(buf)}catch(e){throw new Error('تعذّر قراءة الصوت من هذا الملف')}
+if(ab.duration>60.5)throw new Error('المقطع أطول من دقيقة ('+Math.round(ab.duration)+' ث)');
+if(ab.duration<3)throw new Error('المقطع قصير جداً');
+return{hash:await hashOf(buf),wav:toWav(ab),st:analyze(ab)}}
+
+/* ---------- Gemini ---------- */
+const b64=b=>new Promise(ok=>{const r=new FileReader();r.onload=()=>ok(r.result.split(',')[1]);r.readAsDataURL(b)});
+async function gemini(parts){
+const k=localStorage.key_g;if(!k){$('set').classList.remove('hide');throw new Error('أضف مفتاح Gemini في الإعدادات أولاً')}
+const m=localStorage.model_g||'gemini-2.5-flash';
+const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${k}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contents:[{parts}],generationConfig:{temperature:0.4}})});
+const j=await r.json();if(!r.ok)throw new Error((j.error&&j.error.message)||'خطأ من Gemini');
+const t=(((j.candidates||[])[0]||{}).content||{}).parts;if(!t)throw new Error('لم يصل رد. حاول مرة أخرى');return t.map(p=>p.text||'').join('')}
+const ctx=()=>sec==='quran'?'تلاوة قرآن كريم':'أذان';
+const audio=async w=>({inlineData:{mimeType:'audio/wav',data:await b64(w)}});
+
+/* ---------- UI ---------- */
+function setSec(s){sec=s;localStorage.sec=s;document.body.classList.toggle('adhan',s==='adhan');$('t-quran').classList.toggle('on',s==='quran');$('t-adhan').classList.toggle('on',s==='adhan');$('reader').value=localStorage['rd_'+s]||'';$('evalout').innerHTML='';$('ownout').innerHTML='';render()}
+$('t-quran').onclick=()=>setSec('quran');$('t-adhan').onclick=()=>setSec('adhan');
+$('reader').oninput=e=>localStorage['rd_'+sec]=e.target.value;
+$('gear').onclick=()=>{$('key').value=localStorage.key_g||'';$('model').value=localStorage.model_g||'gemini-2.5-flash';$('set').classList.toggle('hide')};
+$('saveset').onclick=()=>{localStorage.key_g=$('key').value.trim();localStorage.model_g=$('model').value.trim();$('set').classList.add('hide');toast('تم الحفظ')};
+const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const md=s=>esc(s).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/^#+\s*/gm,'');
+const urlOf=b=>URL.createObjectURL(b);
+
+async function render(){
+const refs=await items('ref'),td=refs.filter(r=>r.day===today()).length;
+$('daily').textContent=`تلاوات اليوم: ${td} من 3`+(td>=3?' ✓ اكتمل':'');
+$('reflist').innerHTML=refs.length?'':'<p class="mut">لم ترفع أي تلاوة بعد.</p>';
+$('refsel').innerHTML=refs.map(r=>`<option value="${r.id}">${esc(r.title)}</option>`).join('')||'<option value="">لا توجد تلاوات</option>';
+refs.forEach(r=>{const d=document.createElement('div');d.className='item';
+d.innerHTML=`<b>${esc(r.title)}</b> <span class="mut">${r.day} · ${Math.round(r.st.dur)} ث</span><audio controls src="${urlOf(r.wav)}"></audio><div class="row"><button class="b a">${r.analysis?'أعد التحليل':'حلّل المقام'}</button><button class="b o x">حذف</button></div><div class="res ${r.analysis?'':'hide'}">${r.analysis?md(r.analysis):''}</div>`;
+d.querySelector('.a').onclick=async e=>{const b=e.target;b.disabled=true;b.textContent='جارٍ التحليل...';
+try{const rd=localStorage['rd_'+sec]||'القارئ';
+const t=await gemini([await audio(r.wav),{text:`أنت خبير في المقامات العربية وتجويد وأداء ${ctx()}. المقطع المرفق للقارئ: ${rd}. بيانات محسوبة من الصوت: ${r.st.summary}.\nاكتب بالعربية الفصحى المبسطة:\n1) المقام أو الطبقة التي يبدأ بها.\n2) كل انتقال بين المقامات مع الزمن (مثال: عند 0:12 ينتقل من بيات إلى حجاز) ولماذا.\n3) كيف يتغير ارتفاع الصوت (متى يرفع ومتى يخفض).\n4) السرعة والوقفات والمدود والنفَس.\n5) خطوات عملية مرقمة لأقلده، بالترتيب.\nإن لم تكن متأكداً من شيء فقل ذلك.`}]);
+r.analysis=t;await put(r);render()}catch(er){toast(er.message,7000);b.disabled=false;b.textContent='حلّل المقام'}};
+d.querySelector('.x').onclick=async()=>{if(confirm('حذف هذه التلاوة؟')){await del(r.id);render()}};
+$('reflist').appendChild(d)});
+const hs=await items('practice');
+$('hist').innerHTML=hs.length?'<h2 style="margin-top:14px">سجل التدريب</h2>'+hs.slice(0,10).map(h=>`<div class="item"><b>${h.score.all}%</b> <span class="mut">${h.day} · نغمة ${h.score.p}% · زمن ${h.score.t}%</span></div>`).join(''):''}
+
+$('refbtn').onclick=()=>$('reffile').click();
+$('reffile').onchange=async e=>{
+for(const f of [...e.target.files]){
+const refs=await items('ref');
+if(refs.filter(r=>r.day===today()).length>=3){toast('وصلت إلى 3 تلاوات اليوم. عُد غداً.',6000);break}
+try{toast('جارٍ قراءة '+f.name+'...',0);const p=await prep(f);
+const dup=(await all()).find(x=>x.kind==='ref'&&x.hash===p.hash);
+if(dup){toast('هذه التلاوة مكررة، ارفع تلاوة جديدة.',6000);continue}
+await put({id:crypto.randomUUID(),sec,kind:'ref',ts:Date.now(),day:today(),hash:p.hash,title:f.name.replace(/\.[^.]+$/,''),wav:p.wav,st:p.st});toast('تمت الإضافة')}
+catch(er){toast(f.name+': '+er.message,7000)}}
+e.target.value='';render()};
+
+/* recording */
+let mr=null,chunks=[],timer;
+$('rec').onclick=async()=>{
+if(mr&&mr.state==='recording'){mr.stop();return}
+try{const s=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false}});
+mr=new MediaRecorder(s);chunks=[];mr.ondataavailable=e=>chunks.push(e.data);
+mr.onstop=async()=>{clearTimeout(timer);s.getTracks().forEach(t=>t.stop());$('rec').textContent='ابدأ التسجيل';
+setMine(new File([new Blob(chunks,{type:mr.mimeType})],'rec'))};
+mr.start();$('rec').textContent='إيقاف التسجيل';timer=setTimeout(()=>mr.state==='recording'&&mr.stop(),60000)}
+catch(e){toast('لا يمكن الوصول للميكروفون. اسمح به من إعدادات المتصفح.',6000)}};
+$('upmine').onclick=()=>$('minefile').click();
+$('minefile').onchange=e=>{if(e.target.files[0])setMine(e.target.files[0]);e.target.value=''};
+async function setMine(f){try{pendingMine=await prep(f);const p=$('preview');p.src=urlOf(pendingMine.wav);p.classList.remove('hide');$('evalbtn').classList.remove('hide')}catch(er){toast(er.message,6000)}}
+
+$('evalbtn').onclick=async e=>{
+const rid=$('refsel').value,ref=(await items('ref')).find(r=>r.id===rid);
+if(!ref)return toast('ارفع تلاوة للقارئ أولاً');
+const b=e.target;b.disabled=true;b.textContent='جارٍ التقييم...';
+try{const sc=score(ref.st,pendingMine.st);
+const t=await gemini([{text:'التسجيل الأول: القارئ المرجعي.'},await audio(ref.wav),{text:'التسجيل الثاني: محاولتي في التقليد.'},await audio(pendingMine.wav),{text:`أنت مدرّب خبير في ${ctx()} والمقامات العربية. بيانات المرجع: ${ref.st.summary}\nبيانات محاولتي: ${pendingMine.st.summary}\nنسبة تطابق النغمة المحسوبة: ${sc.p}% ، تطابق الزمن: ${sc.t}%.\nاكتب بالعربية الفصحى المبسطة: (1) ما أجدته. (2) أخطائي بالتفصيل مع الزمن: المقام، ارتفاع الصوت، السرعة، الوقفات، المدود. (3) ما أفعله بالضبط في محاولتي القادمة، في نقاط قصيرة. (4) أهم خطأ واحد أركز عليه اليوم. كن صريحاً ومحدداً.`}]);
+await put({id:crypto.randomUUID(),sec,kind:'practice',ts:Date.now(),day:today(),score:sc,text:t});
+$('evalout').innerHTML=`<div class="score">${sc.all}%</div><div class="mut">نغمة ${sc.p}% · زمن ${sc.t}%</div><div class="res">${md(t)}</div>`;render()}
+catch(er){toast(er.message,7000)}b.disabled=false;b.textContent='قيّم تقليدي'};
+
+/* own recitation */
+$('ownbtn').onclick=()=>$('ownfile').click();
+$('ownfile').onchange=async e=>{const f=e.target.files[0];e.target.value='';if(!f)return;
+$('ownout').innerHTML='<p class="mut">جارٍ التحليل...</p>';
+try{const p=await prep(f);
+const t=await gemini([await audio(p.wav),{text:`أنت مدرّب خبير في ${ctx()} والمقامات العربية. هذه تلاوتي أنا. بيانات محسوبة: ${p.st.summary}\nقسّم التلاوة إلى مقاطع حسب الزمن (مثال: 0:00–0:10)، ولكل مقطع اكتب توجيهاً واضحاً: هل أرفع صوتي أو أخفضه، أي مقام أقرأ به وبأي إحساس (حزين، خاشع، قوي...)، وهل أبطئ أو أسرع، وأين أقف. ثم أضف ملخصاً بأهم 3 تحسينات. اكتب بالعربية الفصحى المبسطة.`}]);
+$('ownout').innerHTML=`<audio controls src="${urlOf(p.wav)}"></audio><div class="res">${md(t)}</div>`}
+catch(er){$('ownout').innerHTML='';toast(er.message,7000)}};
+
+setSec(sec);
+</script>
+</body>
+</html>
